@@ -68,7 +68,7 @@ class TrajectoryExecutor(Node):
 
         # Create log file
         timestamp = datetime.now().strftime("%Y_%m_%d_%H%M")
-        self.log_file = f"inertia_estimation_base_case_emika_hand_no_object{timestamp}.json"
+        self.log_file = f"inertia_estimation_no_object{timestamp}.json"
         self.get_logger().info(f"Logging to: {self.log_file}")
 
     def generate_trajectory(self):
@@ -85,34 +85,14 @@ class TrajectoryExecutor(Node):
         for i in range( int(5 / self.timer_period)):
             trajectory_points.append(self.neutral_position.copy())
 
-        # Define sinusoidal trajectories for each joint
-        #joint_1_positions = np.radians(100) * np.sin(4 * np.pi * time_steps / joint_time)
+        # Define sinusoidal trajectories for respective joints
         joint_2_positions = np.radians(-45) + np.radians(45) * np.sin(4 * np.pi * time_steps / joint_time)
-        joint_3_positions = np.radians(100) * np.sin(4 * np.pi * time_steps / joint_time)
-        #joint_4_positions = np.radians(-100) + np.radians(50) * np.sin(4 * np.pi * time_steps / joint_time)
         joint_5_positions = np.radians(100) * np.sin(4 * np.pi * time_steps / joint_time)
         joint_6_positions = np.radians(90) + np.radians(50) * np.sin(4 * np.pi * time_steps / joint_time)
         joint_7_positions = np.radians(45) + np.radians(90) * np.sin(4 * np.pi * time_steps / joint_time)
 
         # Populate trajectory points for each joint's sequence
         # Each joint's trajectory is a sinusoidal motion
-        """for i in range(len(time_steps)):
-            q_desired = self.neutral_position.copy()
-            q_desired[0] = joint_1_positions[i]
-            trajectory_points.append(q_desired.copy())
-        
-        for i in range(len(time_steps)):
-            q_desired = self.neutral_position.copy()
-            q_desired[1] = joint_2_positions[i]
-            trajectory_points.append(q_desired.copy())
-        
-        for i in range(len(time_steps)):    
-            q_desired = self.neutral_position.copy()
-            q_desired[2] = joint_3_positions[i]
-            trajectory_points.append(q_desired.copy())
-        
-        for i in range(small_pause):
-            trajectory_points.append(self.neutral_position.copy())"""
         
         for i in range(len(time_steps)):
             q_desired = self.neutral_position.copy()

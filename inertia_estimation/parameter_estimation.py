@@ -5,6 +5,7 @@ from numpy.linalg import pinv
 from scipy.signal import butter, filtfilt
 from scipy.optimize import lsq_linear
 import matplotlib.pyplot as plt
+from scipy.optimize import minimize
 
 class InertiaEstimator:
     def __init__(self):
@@ -100,12 +101,13 @@ class InertiaEstimator:
         # Apply filtering to torques
         self.tau_without_object = self.butter_lowpass_filter(self.tau_without_object, cutoff=1, fs=self.sampling_rate, order=2)
 
-    def construct_K_matrix(self, jacobian_dict,v_ee, a_ee, T_Endeffector):
+    def construct_K_matrix(self, jacobian_dict,v_ee, a_ee, T_Flange):
         """ Construct the full K matrix using the loaded Jacobian data, joint velocities, and gravity """  
         # Extract relevant Jacobians and their derivatives
         J = jacobian_dict['J']  # Translational Jacobian
         #Compute the inverse of the transformation matrix
-        R_load = T_Endeffector[:3, :3]
+        
+        R_load = T_Flange[:3, :3]
         g_base = np.array([0, 0, -9.81])  # Gravity vector in the base frame
         # Transform the gravity vector into the end-effector frame
         #Compute gravity vector in end-effector frame
@@ -151,20 +153,22 @@ class InertiaEstimator:
         return K_matrix
 
     def estimate_phi(self):
-        """ Estimate the inertial parameters using least squares and explicit pseudo-inverse calculation """
+        """Estimate inertial parameters using least squares with optimization constraints"""
         tau_diff = []
         K_matrices = []
-        self.ddq_filt_all = []
+
         num_configs = min(len(self.tau_with_object), len(self.tau_without_object))
+        
         for i in range(num_configs):
             jacobian_dict = self.jacobians_with_object[i]
-            dq_filt = self.dq_filtered[i] if i>0 else np.zeros(7)
-            ddq_filt = (dq_filt - self.dq_filtered[i-1]) / 0.01  if i>0 else np.zeros(7)
-            self.ddq_filt_all.append(ddq_filt)
+            dq_filt = self.dq_filtered[i] if i > 0 else np.zeros(7)
+            ddq_filt = (dq_filt - self.dq_filtered[i - 1]) / 0.01 if i > 0 else np.zeros(7)
+            
+
             J = jacobian_dict['J']  # Translational Jacobian
-            dJ = jacobian_dict['dJ']     # Rotational Jacobian
             vel = J @ dq_filt
-            accel = J @ ddq_filt    
+            accel = J @ ddq_filt
+
             self.vel_ee_all.append(vel)
             self.a_ee_all.append(accel)
         
@@ -175,16 +179,40 @@ class InertiaEstimator:
             transfo = self.transfo[i]
             v_ee = self.vel_ee_all[i]
             a_ee = self.a_ee_all[i]
-            K_matrix = self.construct_K_matrix(jacobian_dict,v_ee, a_ee ,transfo)
+
+            K_matrix = self.construct_K_matrix(jacobian_dict, v_ee, a_ee, transfo)
             tau_diff.append(tau_P - tau_0_P)
             K_matrices.append(K_matrix)
 
-        tau_diff = np.vstack(tau_diff).reshape(-1,1)
+        # Combine tau_diff and K_matrices into single matrices
+        tau_diff = np.vstack(tau_diff).reshape(-1, 1)
         K_combined = np.vstack(K_matrices)
+
+        # Compute initial phi estimation with pseudo-inverse
         K_pseudo_inverse = self.damped_pseudo_inverse(K_combined)
-        K_rank = np.linalg.matrix_rank(K_combined)
-        # K_inverse = 10 x 7n, tau_diff = 7n x 1, phi = 10 x 1 
-        phi_estimated = K_pseudo_inverse @ tau_diff
+        phi_initial = K_pseudo_inverse @ tau_diff
+
+        # Define the objective function to minimize the difference from initial estimate
+        def objective(phi):
+            return np.sum((K_combined @ phi - tau_diff.flatten()) ** 2)
+
+        # Define constraints for phi[4], phi[7], and phi[9] to be greater than zero
+        constraints = [
+            {'type': 'ineq', 'fun': lambda phi: phi[4] - 1e-10},  # phi[4] > 0
+            {'type': 'ineq', 'fun': lambda phi: phi[7] - 1e-10},  # phi[7] > 0
+            {'type': 'ineq', 'fun': lambda phi: phi[9] - 1e-10}   # phi[9] > 0
+        ]
+
+        # Run the optimization starting from the initial estimate
+        result = minimize(objective, phi_initial.flatten(), constraints=constraints)
+
+        # Check if optimization was successful and return the result
+        if result.success:
+            phi_estimated = result.x
+        else:
+            print("Optimization failed:", result.message)
+            phi_estimated = phi_initial.flatten()  # Fallback to initial estimate if optimization fails
+
         return phi_estimated
 
     def run_inertia_estimation(self, log_file_with_object, log_file_without_object):
@@ -199,30 +227,25 @@ class InertiaEstimator:
         phi[1] = phi[1]/phi[0]
         phi[2] = phi[2]/phi[0]
         phi[3] = phi[3]/phi[0]
-        np.set_printoptions(precision=4, suppress=True)
-        print("Estimated inertial parameters:")
-        print(f"mass [kg]: {phi[0]}")
-        print(f"center of mass [m]: ({phi[1]}, {phi[2]}, {phi[3]})")
-        print(f"Inertia Tensor Components [kg*m^2]:")
-        print(f"  I_xx: {phi[4]}")
-        print(f"  I_xy: {phi[5]}")
-        print(f"  I_xz: {phi[6]}")
-        print(f"  I_yy: {phi[7]}")
-        print(f"  I_yz: {phi[8]}")
-        print(f"  I_zz: {phi[9]}")
+        
+        print("Estimated inertial parameters (mass, r_com, Inertia_Matrix):")
+        print(f"mass: {phi[0]:.4f},")
+        print(f"center_of_mass: [{phi[1]:.4f}, {phi[2]:.4f}, {phi[3]:.4f}],")
+        print(f"load_inertia: [{phi[4]}, {phi[5]}, {phi[6]}, {phi[5]} , {phi[7]}, {phi[8]}, {phi[6]},{phi[8]}, {phi[9]}]")
+
 
         
 
     def plot_measured_torques(self):
-            """ Plot the measured torques for the configurations with and without the object """
-            plt.figure(figsize=(12, 6))
-            plt.plot(self.tau_with_object, label='With Object')
-            plt.plot(self.tau_without_object, label='Without Object')
-            plt.xlabel('Time Step')
-            plt.ylabel('Torque (Nm)')
-            plt.title('Measured Torques with and without Object')
-            plt.legend()
-            plt.show()
+        """ Plot the measured torques for the configurations with and without the object """
+        plt.figure(figsize=(12, 6))
+        plt.plot(self.tau_with_object, label='With Object')
+        plt.plot(self.tau_without_object, label='Without Object')
+        plt.xlabel('Time Step')
+        plt.ylabel('Torque (Nm)')
+        plt.title('Measured Torques with and without Object')
+        plt.legend()
+        plt.show()
 
     # plot dq_filtered
     def plot_joint_velocities(self):
@@ -324,8 +347,8 @@ class InertiaEstimator:
 
 def main():
     # Insert paths to your log files for the respective cases
-    log_file_with_object = "/home/andri/inertia_estimation_cases/Franka_Emika_Hand/inertia_estimation_franka_hand_2024_11_06_1327.json"
-    log_file_without_object = "/home/andri/inertia_estimation_cases/Franka_Emika_Hand/inertia_estimation_no_hand_2024_11_06_1325.json"
+    log_file_with_object = "/home/andri/inertia_estimation_cases/ball/inertia_estimation_ball2024_11_07_1044.json"
+    log_file_without_object = "/home/andri/inertia_estimation_cases/ball/inertia_estimation_no_object2024_11_07_1045.json"
 
     estimator = InertiaEstimator()
     estimator.run_inertia_estimation(log_file_with_object, log_file_without_object)
