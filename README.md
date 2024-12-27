@@ -25,7 +25,7 @@ Ensure the following are installed before using this tool:
    git clone https://github.com/acaviezel/Inertia-Estimation.git
    ```
 2. Clone the message package into your workspace (if not already done):
-  ```bash
+   ```bash
    cd franka_ros2_ws/src
    git clone https://github.com/acaviezel/messages_fr3.git
    ```
