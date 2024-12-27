@@ -24,17 +24,17 @@ Ensure the following are installed before using this tool:
    cd franka_ros2_ws/src
    git clone https://github.com/acaviezel/Inertia-Estimation.git
    ```
-2. Create the following two custom message types (Jacobian, Transformation Matrix)
-
-    Jacobian:
-    ```bash
-    float64[42] jacobian  # A flat array representing J
-    float64[42] d_jacobian # A flat array representing dJ
-    ```
-    Transformation Matrix:
-    ```bash
-    float64[16] transformation_matrix
+2. Clone the message package into your workspace (if not already done):
+  ```bash
+   cd franka_ros2_ws/src
+   git clone https://github.com/acaviezel/messages_fr3.git
    ```
+3. Change the following things in your impedance controller for the inertia estimation:
+   --**Control Law**
+   For the inertia estimation, a simple PD-controller is sufficient. Activated the respective controll law and comment out the impedance control law. Check lines **390 - 400** in the .cpp file
+   --**Launch File**
+   If you want to estimate the inertial parameters of a new gripper, set the default value in the gripper launch argument to **false**. If you want to estimate the parameters of an attached object to the Franka Hand, keep the value at **true**. 
+   
 ## Procedure
 
 Once everything is set up, the inertial parameters can be estimated as follows:
