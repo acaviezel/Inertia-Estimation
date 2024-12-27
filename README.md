@@ -30,9 +30,9 @@ Ensure the following are installed before using this tool:
    git clone https://github.com/acaviezel/messages_fr3.git
    ```
 3. Change the following things in your impedance controller for the inertia estimation:
-     - **Control Law:**
+     - **Control Law:**  
      For the inertia estimation, a simple PD-controller is sufficient. Activated the respective controll law and comment out the impedance control law. Check lines **390 - 400** in the .cpp file
-     - **Launch File:**
+     - **Launch File:**  
      If you want to estimate the inertial parameters of a new gripper, set the default value in the gripper launch argument to **false**. If you want to estimate the parameters of an attached object to the Franka Hand, keep the value at **true**. 
    
 ## Procedure
